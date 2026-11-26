@@ -1,0 +1,128 @@
+name: Build WinTouch IPA
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-unsigned-ipa:
+    name: Test & Build Unsigned IPA (iOS 15+ ARM64)
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode & Swift version
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen and generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          ls -la WinTouch.xcodeproj
+
+      - name: Run Unit Tests on iOS Simulator
+        run: |
+          SIM_UDID=$(python3 - <<'EOF'
+          import json, subprocess
+          out = subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"])
+          data = json.loads(out)
+          candidates = []
+          for runtime, devices in data.get("devices", {}).items():
+              if "iOS" not in runtime:
+                  continue
+              for d in devices:
+                  name = d.get("name", "")
+                  if d.get("isAvailable") and "iPhone" in name:
+                      pref = 2 if name == "iPhone 16" else (1 if "iPhone 15" in name else 0)
+                      candidates.append((pref, runtime, name, d["udid"]))
+          candidates.sort(reverse=True)
+          if not candidates:
+              raise SystemExit("No available iPhone Simulator found")
+          print(candidates[0][3])
+          EOF
+          )
+          echo "Using Simulator UDID: $SIM_UDID"
+          xcrun simctl boot "$SIM_UDID" || true
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          xcodebuild test \
+            -project WinTouch.xcodeproj \
+            -scheme WinTouch \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath build/TestDerivedData \
+            -parallel-testing-enabled NO \
+            -disable-concurrent-destination-testing \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Build Release ARM64 (Unsigned)
+        run: |
+          xcodebuild \
+            -project WinTouch.xcodeproj \
+            -scheme WinTouch \
+            -configuration Release \
+            -sdk iphoneos \
+            -arch arm64 \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            clean build
+
+      - name: Verify App Bundle & Package Unsigned IPA
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/WinTouch.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: Missing $APP_PATH"
+            exit 1
+          fi
+
+          echo "--- Binary architecture ---"
+          file "$APP_PATH/WinTouch"
+          file "$APP_PATH/WinTouch" | grep -q "arm64"
+
+          echo "--- Required bundle resources ---"
+          test -f "$APP_PATH/Assets.car" || test -f "$APP_PATH/AppIcon60x60@2x.png"
+
+          echo "--- Info.plist verification ---"
+          plutil -p "$APP_PATH/Info.plist"
+          python3 - "$APP_PATH/Info.plist" <<'EOF'
+          import plistlib, sys
+          with open(sys.argv[1], "rb") as f:
+              plist = plistlib.load(f)
+          orientations = plist.get("UISupportedInterfaceOrientations", [])
+          assert set(orientations) == {"UIInterfaceOrientationLandscapeRight", "UIInterfaceOrientationLandscapeLeft"}, f"Unexpected orientations: {orientations}"
+          assert plist.get("NSAppTransportSecurity", {}).get("NSAllowsArbitraryLoads") is True, "Missing NSAllowsArbitraryLoads"
+          assert bool(plist.get("NSLocalNetworkUsageDescription")), "Missing NSLocalNetworkUsageDescription"
+          assert bool(plist.get("NSCameraUsageDescription")), "Missing NSCameraUsageDescription"
+          print("Info.plist verified OK:", plist.get("CFBundleDisplayName"), plist.get("CFBundleIdentifier"))
+          EOF
+
+          rm -rf build/Payload
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          rm -rf build/Payload/WinTouch.app/_CodeSignature
+          (cd build && zip -qry WinTouch.ipa Payload)
+
+          echo "--- IPA archive summary ---"
+          ls -lh build/WinTouch.ipa
+          unzip -l build/WinTouch.ipa | head -n 40
+
+      - name: Upload WinTouch.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinTouch-IPA
+          path: build/WinTouch.ipa
+          retention-days: 90
+          if-no-files-found: error

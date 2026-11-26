@@ -1,0 +1,70 @@
+name: WinTouch
+
+options:
+  bundleIdPrefix: com.wintouch
+  deploymentTarget:
+    iOS: "15.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+
+targets:
+  WinTouch:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: WinTouch
+        excludes:
+          - "Resources/Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.wintouch.ios
+        PRODUCT_NAME: WinTouch
+        INFOPLIST_FILE: WinTouch/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        AD_HOC_CODE_SIGNING_ALLOWED: NO
+        DEVELOPMENT_TEAM: ""
+        ENABLE_BITCODE: NO
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+
+  WinTouchTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: WinTouchTests
+    dependencies:
+      - target: WinTouch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.wintouch.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/WinTouch.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WinTouch"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+
+schemes:
+  WinTouch:
+    build:
+      targets:
+        WinTouch: all
+        WinTouchTests: [test]
+    test:
+      targets:
+        - WinTouchTests
