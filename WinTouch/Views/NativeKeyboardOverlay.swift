@@ -230,7 +230,7 @@ struct NativeKeyboardOverlay: View {
                         Text(item.0)
                             .font(.system(size: 12, weight: .bold))
                             .padding(.horizontal, 10)
-                            .frame(minWidth: 38, height: 32)
+                            .frame(minWidth: 38, minHeight: 32, maxHeight: 32)
                             .background(Color.primary.opacity(0.09))
                             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                             .overlay(
